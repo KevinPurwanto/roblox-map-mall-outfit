@@ -1,0 +1,5 @@
+# file place diedit di Studio, bukan di sini
+*.rbxl
+*.rbxl.lock
+build/
+.DS_Store
