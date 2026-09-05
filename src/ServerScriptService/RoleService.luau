@@ -16,7 +16,8 @@ local RunService = game:GetService("RunService")
 ------------------------------------------------------------------
 -- UserId, bukan username. Cek di URL profil: roblox.com/users/<UserId>/profile
 local SUPERADMINS: { [number]: boolean } = {
-	[0] = true, -- ganti dengan UserId kamu
+	[9954653030] = true, -- concreabot, permanen
+	[0] = true, -- TODO: ganti dengan UserId superadmin kedua (placeholder, aman karena tidak ada akun ber-UserId 0)
 }
 
 local GROUP_ID = 0 -- 0 = tidak pakai grup
@@ -30,16 +31,50 @@ local RANK = {
 	SUPERADMIN = 3,
 }
 
-local adminStore = DataStoreService:GetDataStore("Roles_Admins_v1")
+-- GetDataStore() sendiri bisa throw (bukan cuma GetAsync/SetAsync) kalau place
+-- ini belum pernah di-publish ke Roblox -- dibungkus pcall biar tidak menjatuhkan
+-- seisi RoleService (dan Showroom yang require ini) kalau itu terjadi.
+local adminStore: any = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore("Roles_Admins_v1")
+	end)
+	if ok then
+		adminStore = result
+	else
+		warn("[RoleService] DataStore tidak tersedia (place ini kemungkinan belum "
+			.. "pernah di-publish ke Roblox). SUPERADMINS tetap jalan normal, tapi "
+			.. "admin yang diangkat lewat ManageAdmin tidak akan tersimpan/terbaca.")
+	end
+end
 local cache: { [number]: string } = {}
+
+-- override role buat testing (ganti POV Player/Admin/Superadmin tanpa akun asli)
+-- -- HANYA berlaku di Studio, dicek keras di server (bukan cuma disembunyikan di
+-- client) supaya mustahil kepakai di server live beneran walau remote-nya dipanggil paksa
+local debugRoleOverride: { [number]: string } = {}
 
 local RoleService = {}
 RoleService.RANK = RANK
+
+function RoleService.setDebugRole(userId: number, role: string?)
+	if not RunService:IsStudio() then
+		return
+	end
+	if role ~= nil and not RANK[role] then
+		return
+	end
+	debugRoleOverride[userId] = role
+end
 
 ------------------------------------------------------------------
 -- Pembacaan role
 ------------------------------------------------------------------
 local function computeRole(player: Player): string
+	if RunService:IsStudio() and debugRoleOverride[player.UserId] then
+		return debugRoleOverride[player.UserId]
+	end
+
 	if SUPERADMINS[player.UserId] then
 		return "SUPERADMIN"
 	end

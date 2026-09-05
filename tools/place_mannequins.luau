@@ -18,6 +18,21 @@ local CLEAR_EXIST  = true   -- hapus folder Mannequins lama dulu
 -- opsional, isi assetId kalau mau langsung dipakaikan baju bawaan (0 = lewati)
 local DEFAULT_SHIRT_M, DEFAULT_PANTS_M = 0, 0
 local DEFAULT_SHIRT_F, DEFAULT_PANTS_F = 0, 0
+
+-- PodiumIndex asalnya cuma ikut urutan child di Explorer (acak, tidak sesuai
+-- posisi fisik). Map ini grid rapi 12 kolom x 10 podium (sudah dicek dari data
+-- koordinat asli: kolom terpisah 24 studs di sumbu X, ada celah ~50 studs di
+-- tengah tiap kolom -- kemungkinan lorong melintang, tapi tetap satu jalur).
+-- Sempat dicoba nearest-neighbor supaya tidak perlu asumsi grid, tapi celah
+-- yang berulang di tiap kolom itu malah bikin nearest-neighbor loncat-loncat
+-- antar kolom di titik yang sama -- jadi baris/kolom manual ternyata lebih pas
+-- untuk map spesifik ini.
+local SORT_PODIUMS   = true  -- false = balik ke urutan Explorer apa adanya
+local ROW_AXIS       = "X"   -- sumbu pengelompokan kolom -- JANGAN ganti ke "Z" (sudah terbukti bikin baris ketuker di map ini, grid-nya sedikit miring)
+local ROW_TOLERANCE  = 6     -- studs; beda <= ini dianggap masih kolom yang sama
+local ROW_DESCENDING = true  -- true = mulai dari kolom paling dekat SpawnLocation (-112,6,-203)
+local ZIGZAG_ROWS    = true  -- arah bolak-balik tiap kolom (jalur jalan kaki alami)
+local PRINT_ORDER    = true  -- cetak #index -> posisi ke Output untuk verifikasi manual
 ------------------------------------------------------------------
 
 local ws = workspace
@@ -147,10 +162,71 @@ local function prepare(rig: Model, gender: string)
 end
 
 ------------------------------------------------------------------
--- 4. Tempatkan
+-- 4. Urutkan podium berdasar posisi (bukan urutan acak Explorer)
 ------------------------------------------------------------------
-local count, index = 0, 0
+type Candidate = { podium: Instance, cf: CFrame, size: Vector3, rowValue: number, colValue: number }
 
+local function axisValue(pos: Vector3, axis: string): number
+	if axis == "X" then
+		return pos.X
+	end
+	return pos.Z
+end
+
+local colAxis = (ROW_AXIS == "X") and "Z" or "X"
+
+local function sortPodiums(list: { Candidate }): { Candidate }
+	table.sort(list, function(a, b)
+		return a.rowValue < b.rowValue
+	end)
+
+	-- kelompokkan jadi kolom: item baru gabung kolom berjalan kalau masih
+	-- dalam toleransi dari rata-rata kolom itu, kalau tidak buka kolom baru
+	local rows: { { Candidate } } = {}
+	local rowSum, rowCount = 0, 0
+	for _, item in ipairs(list) do
+		local row = rows[#rows]
+		if row == nil or math.abs(item.rowValue - rowSum / rowCount) > ROW_TOLERANCE then
+			row = {}
+			table.insert(rows, row)
+			rowSum, rowCount = 0, 0
+		end
+		table.insert(row, item)
+		rowSum += item.rowValue
+		rowCount += 1
+	end
+
+	for i, row in ipairs(rows) do
+		local descending = ZIGZAG_ROWS and (i % 2 == 0)
+		table.sort(row, function(a, b)
+			if descending then
+				return a.colValue > b.colValue
+			end
+			return a.colValue < b.colValue
+		end)
+	end
+
+	if ROW_DESCENDING then
+		local reversed: { { Candidate } } = {}
+		for i = #rows, 1, -1 do
+			table.insert(reversed, rows[i])
+		end
+		rows = reversed
+	end
+
+	local sorted: { Candidate } = {}
+	for _, row in ipairs(rows) do
+		for _, item in ipairs(row) do
+			table.insert(sorted, item)
+		end
+	end
+	return sorted
+end
+
+------------------------------------------------------------------
+-- 5. Tempatkan
+------------------------------------------------------------------
+local candidates: { Candidate } = {}
 for _, podium in ipairs(podiumFolder:GetChildren()) do
 	local cf: CFrame, size: Vector3
 
@@ -162,7 +238,34 @@ for _, podium in ipairs(podiumFolder:GetChildren()) do
 		continue
 	end
 
+	table.insert(candidates, {
+		podium = podium,
+		cf = cf,
+		size = size,
+		rowValue = axisValue(cf.Position, ROW_AXIS),
+		colValue = axisValue(cf.Position, colAxis),
+	})
+end
+
+if SORT_PODIUMS then
+	candidates = sortPodiums(candidates)
+end
+
+local count, index = 0, 0
+
+for _, candidate in ipairs(candidates) do
+	local podium, cf, size = candidate.podium, candidate.cf, candidate.size
+
 	index += 1
+	do
+		-- strip suffix _NNN lama dulu (kalau ada) supaya rerun tidak menumpuk jadi _047_047
+		local baseName = podium.Name:match("^(.-)_%d+$") or podium.Name
+		podium.Name = string.format("%s_%03d", baseName, index)
+	end
+	if PRINT_ORDER then
+		print(string.format("  #%d -> %s @ (%.1f, %.1f, %.1f)",
+			index, podium:GetFullName(), cf.Position.X, cf.Position.Y, cf.Position.Z))
+	end
 	local top = cf.Position.Y + size.Y / 2
 
 	-- berjajar di sisi panjang podium, menghadap sisi pendek
@@ -222,6 +325,7 @@ for _, podium in ipairs(podiumFolder:GetChildren()) do
 		rig:PivotTo(CFrame.lookAt(pos, pos + look))
 		rig:SetAttribute("PodiumIndex", index)
 		rig:SetAttribute("Gender", item.gender)
+		rig.Name = string.format("%s_%03d", rig.Name, index) -- "Mannequin_M_047" -- biar urutan kelihatan langsung di Explorer
 		rig.Parent = folder
 		count += 1
 	end

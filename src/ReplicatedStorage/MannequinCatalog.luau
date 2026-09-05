@@ -5,11 +5,19 @@
 -- Kunci tabel = attribute "PodiumIndex" pada mannequin (1..120).
 -- Attribute ShirtId/PantsId di mannequin akan menimpa isi tabel ini.
 
+export type AccessoryItem = {
+	assetId: number, -- ID Accessory classic (rambut, topi, dll) -- BUKAN Layered Clothing/UGC baru
+	price: number?, -- 0 / nil = tidak dijual
+	label: string?, -- nil = pakai nama asli dari MarketplaceService:GetProductInfo
+}
+
 export type Outfit = {
 	shirt: number?,
 	pants: number?,
-	price: number?, -- 0 / nil = tidak dijual
+	price: number?, -- harga shirt (Robux), 0 / nil = tidak dijual
+	pantsPrice: number?, -- harga pants (Robux), 0 / nil = tidak dijual
 	label: string?,
+	accessories: { AccessoryItem }?, -- rambut/aksesoris lain, masing-masing harga sendiri
 }
 
 export type PodiumEntry = {
@@ -20,10 +28,13 @@ export type PodiumEntry = {
 
 local Catalog = {}
 
-Catalog.entries: { [number]: PodiumEntry } = {
+-- "field: Type = value" bukan syntax Luau yang valid (cuma berlaku untuk local/parameter) --
+-- makanya dideklarasikan sebagai local typed dulu, baru ditempel ke field Catalog.
+local entries: { [number]: PodiumEntry } = {
 	[1] = {
 		name = "Koleksi Pink Bow",
-		M = { shirt = 0, pants = 0, price = 0, label = "Pink Bow (Cowok)" },
+		-- shirt = ID ShirtTemplate asli (bukan ID katalog) -- lihat tools/resolve_shirt_id.luau
+		M = { shirt = 18728338235, pants = 0, price = 0, label = "Pink Under Armour (Cowok)" },
 		F = { shirt = 0, pants = 0, price = 0, label = "Pink Bow (Cewek)" },
 	},
 	[2] = {
@@ -32,13 +43,15 @@ Catalog.entries: { [number]: PodiumEntry } = {
 	},
 	-- lanjutkan sampai [120]
 }
+Catalog.entries = entries
 
 -- dipakai kalau podium belum terdaftar di atas
-Catalog.fallback: PodiumEntry = {
+local fallback: PodiumEntry = {
 	name = "Belum diisi",
 	M = { shirt = 0, pants = 0 },
 	F = { shirt = 0, pants = 0 },
 }
+Catalog.fallback = fallback
 
 function Catalog.get(podiumIndex: number, gender: string): Outfit?
 	local entry = Catalog.entries[podiumIndex] or Catalog.fallback
