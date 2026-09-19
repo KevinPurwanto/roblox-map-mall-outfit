@@ -14,6 +14,8 @@ local FACE_FLIP    = false  -- true kalau arah hadapnya terbalik
 local SWAP_SIDES   = true   -- true = cewek di kiri, cowok di kanan
 local FACE_INWARD  = false  -- true = keduanya saling serong menghadap ke tengah
 local CLEAR_EXIST  = true   -- hapus folder Mannequins lama dulu
+local STRIP_FACE   = true   -- buang Decal wajah dari Head (mannequin toko = patung polos)
+local STRIP_HAIR   = true   -- buang SEMUA Accessory bawaan rig (termasuk "Kate Hair" rig cewek)
 
 -- opsional, isi assetId kalau mau langsung dipakaikan baju bawaan (0 = lewati)
 local DEFAULT_SHIRT_M, DEFAULT_PANTS_M = 0, 0
@@ -49,8 +51,30 @@ local function isRig(obj: Instance): boolean
 		and obj:FindFirstChild("HumanoidRootPart") ~= nil
 end
 
+-- Deteksi rig cewek harus jalan di R6 MAUPUN R15.
+--
+-- Cara lama (cek CharacterMesh) cuma valid di R6: di R15 badan sudah berupa
+-- MeshPart, class CharacterMesh tidak dipakai sama sekali -- jadi kalau kedua
+-- template R15, dua-duanya akan terbaca "cowok" dan slot cewek kosong.
+-- Urutan pengecekan: attribute eksplisit -> nama -> CharacterMesh (khusus R6).
+local FEMALE_NAME_HINTS = { "female", "cewek", "woman", "girl", "wanita", "perempuan" }
+
 local function looksFemale(rig: Model): boolean
-	-- paket badan Woman dipasang lewat CharacterMesh; rig default tidak punya ini
+	local tag = rig:GetAttribute("Gender")
+	if tag == "F" then
+		return true
+	elseif tag == "M" then
+		return false
+	end
+
+	local lower = rig.Name:lower()
+	for _, hint in ipairs(FEMALE_NAME_HINTS) do
+		if lower:find(hint, 1, true) then
+			return true
+		end
+	end
+
+	-- R6 saja: paket badan Woman dipasang lewat CharacterMesh
 	return rig:FindFirstChildOfClass("CharacterMesh") ~= nil
 end
 
@@ -93,6 +117,21 @@ assert(maleTpl and femaleTpl,
 	"Tidak ada satu pun Model berisi Humanoid + HumanoidRootPart di Workspace/ServerStorage/ReplicatedStorage")
 print("Template cowok:", (maleTpl :: Model):GetFullName(), "| cewek:", (femaleTpl :: Model):GetFullName())
 
+-- Laporkan RigType supaya ketahuan kalau template belum diganti ke R15, atau
+-- lebih parah: satu R6 satu R15 (mannequin jadi beda tinggi/proporsi tanpa error).
+local function rigTypeOf(rig: Model): string
+	local hum = rig:FindFirstChildOfClass("Humanoid")
+	return hum and hum.RigType.Name or "?"
+end
+
+local maleRigType = rigTypeOf(maleTpl :: Model)
+local femaleRigType = rigTypeOf(femaleTpl :: Model)
+print(string.format("RigType -> cowok: %s | cewek: %s", maleRigType, femaleRigType))
+if maleRigType ~= femaleRigType then
+	warn("Kedua template beda RigType (" .. maleRigType .. " vs " .. femaleRigType
+		.. ") -- mannequin cowok & cewek akan beda tinggi/proporsi. Samakan dulu.")
+end
+
 ------------------------------------------------------------------
 -- 2. Folder output
 ------------------------------------------------------------------
@@ -132,6 +171,33 @@ local function prepare(rig: Model, gender: string)
 			d:Destroy() -- buang Animate dsb biar tidak jalan sendiri
 		end
 	end
+	-- Mannequin toko = patung polos: tanpa wajah, tanpa rambut bawaan.
+	--
+	-- Accessory DIHAPUS SEMUA di sini, termasuk "Kate Hair" bawaan rig cewek.
+	-- Aksesoris yang memang mau dipajang dipasang belakangan oleh server dari
+	-- MannequinCatalog, dan yang itu ditandai attribute FromCatalog -- jadi tidak
+	-- ada yang hilang, cuma rambut bawaan template yang dibuang.
+	if STRIP_HAIR then
+		for _, d in ipairs(rig:GetDescendants()) do
+			if d:IsA("Accessory") then
+				d:Destroy()
+			end
+		end
+	end
+
+	-- Wajah itu Decal di dalam Head (nama bawaannya "face"). Dibuang lewat class,
+	-- bukan nama, karena rig hasil Rig Builder versi berbeda memakai nama berbeda.
+	if STRIP_FACE then
+		local head = rig:FindFirstChild("Head")
+		if head then
+			for _, d in ipairs(head:GetDescendants()) do
+				if d:IsA("Decal") or d:IsA("Texture") then
+					d:Destroy()
+				end
+			end
+		end
+	end
+
 	for _, d in ipairs(rig:GetDescendants()) do
 		if d:IsA("BasePart") then
 			d.Anchored = true

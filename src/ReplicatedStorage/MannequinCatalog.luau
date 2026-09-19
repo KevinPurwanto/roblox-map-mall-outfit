@@ -33,8 +33,10 @@ local Catalog = {}
 local entries: { [number]: PodiumEntry } = {
 	[1] = {
 		name = "Koleksi Pink Bow",
-		-- shirt = ID ShirtTemplate asli (bukan ID katalog) -- lihat tools/resolve_shirt_id.luau
-		M = { shirt = 18728338235, pants = 0, price = 0, label = "Pink Under Armour (Cowok)" },
+		-- shirt/pants = ID KATALOG (angka dari URL roblox.com/catalog/<ID>/...),
+		-- bukan ID ShirtTemplate. Server yang mengonversinya ke ID tekstur saat
+		-- memasang baju ke mannequin.
+		M = { shirt = 18728338281, pants = 0, price = 0, label = "Pink Under Armour (Cowok)" },
 		F = { shirt = 0, pants = 0, price = 0, label = "Pink Bow (Cewek)" },
 	},
 	[2] = {

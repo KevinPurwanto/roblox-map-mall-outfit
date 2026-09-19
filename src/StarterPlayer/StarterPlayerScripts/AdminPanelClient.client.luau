@@ -74,12 +74,19 @@ local window = Instance.new("Frame")
 window.Name = "Window"
 window.AnchorPoint = Vector2.new(0.5, 0.5)
 window.Position = UDim2.fromScale(0.5, 0.5)
-window.Size = UDim2.new(0, 720, 0, 560)
+-- proporsi layar, dibatasi UISizeConstraint -- 720x560 tetap akan melewati batas
+-- layar kecil, dan tombol Tutup-nya ikut terdorong keluar
+window.Size = UDim2.new(0.92, 0, 0.88, 0)
 window.BackgroundColor3 = PAPER
 window.BorderSizePixel = 0
 window.ZIndex = 11
 window.Parent = backdrop
 corner(window, 16)
+
+local windowSize = Instance.new("UISizeConstraint")
+windowSize.MinSize = Vector2.new(320, 300)
+windowSize.MaxSize = Vector2.new(720, 560)
+windowSize.Parent = window
 
 local headerTitle = Instance.new("TextLabel")
 headerTitle.Position = UDim2.new(0, 20, 0, 14)

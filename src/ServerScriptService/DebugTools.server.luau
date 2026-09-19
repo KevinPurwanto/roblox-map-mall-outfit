@@ -16,7 +16,6 @@ end
 
 local Roles = require(ServerScriptService:WaitForChild("RoleService"))
 
-local NORMAL_SPEED = 16
 local FAST_SPEED = 50
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -43,13 +42,15 @@ DebugSetRole.OnServerEvent:Connect(function(player: Player, role: any)
 	Roles.refresh(player)
 end)
 
+-- Tidak menyetel Humanoid.WalkSpeed langsung: sejak ada tombol lari (Shift),
+-- Sprint.client.luau adalah satu-satunya yang menulis WalkSpeed. Kalau debug
+-- ikut menulis, sekali tekan-lepas Shift akan mengembalikannya ke 16 sementara
+-- tombol debug masih menyala "ON" -- salah tanpa ada error.
+-- Jadi debug cuma mengubah kecepatan DASAR-nya lewat attribute, dan Sprint yang
+-- menerapkannya (attribute Player direplikasi ke client).
 DebugSetSpeed.OnServerEvent:Connect(function(player: Player, fast: any)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
-	end
-	humanoid.WalkSpeed = fast == true and FAST_SPEED or NORMAL_SPEED
+	player:SetAttribute("DebugBaseSpeed", fast == true and FAST_SPEED or nil)
 end)
+
 
 print("[DebugTools] Aktif (Studio only) -- role & speed switcher tersedia buat testing.")
