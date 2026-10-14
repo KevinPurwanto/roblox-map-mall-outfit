@@ -123,8 +123,6 @@ local strings: { [string]: { id: string, en: string } } = {
 	favoriteDenied = { id = "Favorit ditolak (izin)", en = "Favorite denied (permission)" },
 
 	teleporterTitle = { id = "Teleporter Podium", en = "Podium Teleporter" },
-	teleporterPlaceholder = { id = "Nomor podium (1-120)", en = "Podium number (1-120)" },
-	teleporterButton = { id = "Teleport", en = "Teleport" },
 	teleporterFillNumber = { id = "Isi nomor podium dulu (angka)", en = "Enter a podium number first" },
 	teleporterInProgress = { id = "Teleporting...", en = "Teleporting..." },
 	teleporterOk = { id = "Teleport ke podium %d", en = "Teleported to podium %d" },
@@ -132,6 +130,10 @@ local strings: { [string]: { id: string, en: string } } = {
 	teleporterNoMannequins = { id = "Belum ada mannequin -- coba lagi sebentar", en = "No mannequins yet -- try again shortly" },
 	teleporterNotFound = { id = "Podium %d tidak ditemukan (coba 1-120)", en = "Podium %d not found (try 1-120)" },
 	teleporterNoCharacter = { id = "Karakter belum siap", en = "Character not ready" },
+	teleporterSubtitle = { id = "Pilih podium tujuan", en = "Pick where to go" },
+	teleporterTypeHint = { id = "atau ketik no.", en = "or type a no." },
+	teleporterRandom = { id = "🎲 Acak", en = "🎲 Random" },
+	teleporterGo = { id = "Pergi", en = "Go" },
 }
 
 local function detectLang(): Lang

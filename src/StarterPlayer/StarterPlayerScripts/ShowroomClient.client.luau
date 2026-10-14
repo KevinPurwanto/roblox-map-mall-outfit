@@ -1095,14 +1095,6 @@ local function open(mannequin: Model, forceFresh: boolean?)
 	render(mannequin, data)
 end
 
--- Tombol "E" muncul = pemain sudah cukup dekat untuk kemungkinan membuka panel
--- -> saat yang tepat mengambil data duluan
-ProximityPromptService.PromptShown:Connect(function(prompt: ProximityPrompt)
-	local mannequin = prompt.Parent and prompt.Parent.Parent
-	if mannequin and mannequin:IsA("Model") and mannequin:GetAttribute("PodiumIndex") then
-		prefetch(mannequin)
-	end
-end)
 
 local function close()
 	panel.Visible = false
@@ -1110,13 +1102,35 @@ local function close()
 	selected = nil
 end
 
+-- Prompt mana pun di game ini lewat sini, bukan cuma milik mannequin. Dulu
+-- syaratnya cuma "kakek prompt-nya sebuah Model" -- begitu teleporter berubah
+-- dari satu Part jadi Model portal, menekan E di portal ikut membuka panel
+-- outfit (kosong, "Search failed"). Sekarang wajib bertag Mannequin, tag yang
+-- sama yang dipasang server ke tiap mannequin asli.
+local function mannequinOfPrompt(prompt: ProximityPrompt): Model?
+	local candidate = prompt.Parent and prompt.Parent.Parent
+	if candidate and candidate:IsA("Model") and CollectionService:HasTag(candidate, "Mannequin") then
+		return candidate
+	end
+	return nil
+end
+
 ProximityPromptService.PromptTriggered:Connect(function(prompt, promptPlayer)
 	if promptPlayer ~= player then
 		return
 	end
-	local mannequin = prompt.Parent and prompt.Parent.Parent
-	if mannequin and mannequin:IsA("Model") then
+	local mannequin = mannequinOfPrompt(prompt)
+	if mannequin then
 		open(mannequin)
+	end
+end)
+
+-- Tombol "E" muncul = pemain sudah cukup dekat untuk kemungkinan membuka panel
+-- -> saat yang tepat mengambil data duluan
+ProximityPromptService.PromptShown:Connect(function(prompt: ProximityPrompt)
+	local mannequin = mannequinOfPrompt(prompt)
+	if mannequin then
+		prefetch(mannequin)
 	end
 end)
 

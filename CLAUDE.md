@@ -526,6 +526,65 @@ di server dan dilihat semua pemain sekaligus, jadi dipakai bahasa Inggris.
 `StatsChanged` sekarang cuma sinyal kosong "ada yang berubah" untuk menyegarkan
 papan donatur yang sedang terbuka.
 
+### Portal teleporter
+
+`TeleporterPortal.luau` (modul) membangun portal lingkaran berdiri; dipanggil
+`Teleporter.server.luau` tiap server jalan, jadi desainnya hidup di repo, bukan
+di file place. Dulu kiosnya cuma satu Part kotak neon.
+
+- **Posisi diatur dari Studio, bukan dari kode.** Kalau ada Part bernama
+  `TeleporterSpot` di Workspace (panel pink tembus pandang seukuran portal,
+  bertuliskan "sisi ini = DEPAN"), portal dibangun di posisinya dan menghadap
+  `LookVector`-nya (sisi Front). Penanda dihancurkan server saat game jalan.
+  Pemilik map tinggal geser/putar penanda lalu **simpan place**. Penanda itu
+  hidup di file place (bukan git) — kalau hilang, kode memakai cadangan di
+  bawah.
+- **Posisi cadangan:** tepi timur area spawn (`PORTAL_XZ = (-101.5, -203)`), menghadap
+  -X ke dalam area spawn. Area spawn ternyata 29 × 29,5 stud (x −127..−98), jadi
+  posisi kios lama (x −106) sebenarnya di tengahnya. Tinggi lantai dibaca lewat
+  raycast yang dimulai dari ketinggian **sedang**: tepat di atas area ini ada
+  dekorasi raksasa (puncak Y ±57) yang akan kena duluan kalau raycast dari langit.
+- **Tanpa asset ID**: bingkai = 32 balok yang diputar mengelilingi pusat (Roblox
+  tidak punya primitif torus), permukaan = material **ForceField** (beranimasi
+  sendiri), kedalaman = inti ungu gelap + cincin neon makin kecil ke belakang,
+  kerlip = ParticleEmitter tekstur bawaan. Versi pertama terlalu pucat dan datar
+  ("seperti cermin") — warna dipekatkan dan lapisan kedalaman ditambah setelah
+  dicek lewat screenshot Studio.
+- **Bisa dimasuki**: lubang portal sengaja rata dengan puncak alas (bagian bawah
+  bingkai terbenam di alas), jadi pemain berjalan masuk tanpa melompat. Menyentuh
+  `PortalTrigger` membuka panel (di `TeleporterClient`, Touched karakter sendiri
+  = instan di client). Setelah panel ditutup lewat tombol Tutup ada jeda 3 detik,
+  kalau tidak panel langsung terbuka lagi karena pemain masih berdiri di portal.
+  Tombol E mengabaikan jeda itu.
+- Denyut cahaya `PortalGlow` dijalankan di **client** — di server, tween properti
+  direplikasi ke semua pemain tiap frame untuk efek yang murni kosmetik.
+- Pratinjau di Edit mode: `require(game.ServerScriptService.TeleporterPortal:Clone()).build(pos, facing)`
+  — **harus clone**, karena `require` meng-cache per instance sementara Rojo
+  memperbarui Source di instance yang sama. Hapus pratinjaunya setelah selesai.
+
+- **Bug yang pernah terjadi:** begitu kios berubah dari satu Part jadi Model
+  portal, menekan E di portal ikut membuka panel OUTFIT mannequin (kosong,
+  "Search failed"). `ShowroomClient` dulu menganggap prompt apa pun yang
+  "kakek"-nya sebuah Model adalah mannequin. Sekarang `mannequinOfPrompt()`
+  mewajibkan tag `Mannequin`. Aturan umum: handler `ProximityPromptService`
+  menerima prompt **dari seluruh game** — selalu saring dengan tag/nama.
+- **Panel:** modal di tengah (latar gelap) dengan grid tombol nomor 1..N
+  (N = PodiumIndex tertinggi dari mannequin bertag, cadangan 120) — pemain
+  tidak hafal nomor podium dan mengetik di HP merepotkan. Kolom ketik + tombol
+  🎲 Acak tetap ada. Kelipatan 10 diberi warna sebagai patokan; selang-seling
+  warna per 10 nomor sempat dicoba tapi tidak sejajar dengan jumlah kolom
+  (yang ikut lebar layar) dan terlihat acak. Tombol tutup memakai "X" biasa —
+  font Gotham tidak punya glyph "✕" dan menampilkannya sebagai kotak kosong.
+- **Jangkauan tombol E efektif ±11 stud** dari pusat portal walau
+  `MaxActivationDistance = 14` (diukur: terbuka di 10,8, tidak di 11,8).
+  Penyebabnya belum dipastikan; untuk pemain di depan portal sudah cukup.
+
+Terverifikasi di Studio (2026-10-14): portal terbangun di posisi penanda dan
+penandanya hilang saat Play, berjalan masuk membuka panel dalam 0,3 detik,
+menekan E membuka panel teleporter **tanpa** panel mannequin, grid berisi 120
+tombol, teleport ke podium #47 berhasil. **Belum terverifikasi:** jeda 3 detik
+setelah tombol Tutup (tombol GUI tidak bisa diklik dari script).
+
 ### Lari (Shift / tombol HP)
 
 `Sprint.client.luau` — tahan **Shift** untuk lari (16 → 48, 3x jalan normal). Dipakai
