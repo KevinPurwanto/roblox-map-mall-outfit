@@ -90,16 +90,27 @@ dari komputer/session lain, ini yang perlu diulang — jangan asumsikan sudah ad
 
 ### Rig template
 
-Dua Model bernama `Rig` di Workspace, keduanya **R6**, tinggi 5 studs,
+> **Status terbaru (dicek lewat Studio MCP, 2026-10-14):** template di place
+> yang aktif sekarang adalah **`RigMale` dan `RigFemale`, keduanya R15** dengan
+> **dynamic head** (Head = MeshPart, wajah = `TextureID` + `FaceControls`,
+> bukan Decal). 240 mannequin di `workspace.Mannequins` juga sudah R15. Bagian
+> di bawah tentang rig R6 adalah keadaan awal map, dipertahankan sebagai
+> referensi.
+
+Keadaan awal: dua Model bernama `Rig` di Workspace, keduanya **R6**, tinggi 5 studs,
 lebar bahu 4 studs (torso 2 + lengan 1+1).
 
 - **Cowok** — rig polos, tanpa `CharacterMesh`
 - **Cewek** — punya 5 `CharacterMesh` paket Woman + accessory "Kate Hair"
 
 Itu isi *template*-nya. Mannequin hasil `tools/place_mannequins.luau` sengaja
-dibuat polos: wajah (Decal di Head) dan semua Accessory bawaan dibuang
-(`STRIP_FACE`, `STRIP_HAIR`). Wajah dibuang lewat class, bukan nama "face",
-karena rig dari Rig Builder versi berbeda memakai nama berbeda.
+dibuat polos: wajah dan semua Accessory bawaan dibuang (`STRIP_FACE`,
+`STRIP_HAIR`). Wajah ada **dua bentuk** dan keduanya ditangani: Decal di Head
+(kepala klasik) **dan** `Head.TextureID` + `FaceControls` (dynamic head R15).
+Versi awal tool cuma membuang Decal — di dynamic head itu tidak menghapus apa
+pun, dan cek "berapa mannequin masih punya Decal wajah" menjawab **0** padahal
+wajahnya masih jelas terlihat. Jangan pakai jumlah Decal sebagai bukti wajah
+sudah hilang; cek `Head.TextureID`.
 
 MeshId paket Woman, kalau perlu membuat rig cewek baru dari rig cowok:
 
@@ -111,7 +122,7 @@ MeshId paket Woman, kalau perlu membuat rig cewek baru dari rig cowok:
 | LeftLeg | 746826007 |
 | RightLeg | 746825633 |
 
-#### Pindah ke R15 (belum dilakukan, tapi sudah disiapkan)
+#### Pindah ke R15 (SUDAH dilakukan -- template sekarang RigMale/RigFemale R15)
 
 Kode server **tidak** terikat R6 — yang dipakai cuma `Head` dan
 `HumanoidRootPart`, dua-duanya ada di R6 dan R15. Shirt/Pants/Accessory classic
@@ -429,9 +440,17 @@ Dua jebakan yang sudah ditangani:
 `StatsService.luau` (modul) + `Donations.server.luau` + `DonateClient` (modal
 donasi). Angka per pemain tampil di `leaderstats` bawaan Roblox (lihat bawah).
 
-**Robux TIDAK bisa dipindahkan antar pemain.** Roblox tidak punya API untuk itu.
-Satu-satunya cara Robux berpindah adalah pemain membeli sesuatu — jadi donasi di
-sini memakai **Developer Product**, dan Robux-nya masuk ke pemilik experience.
+Donasi di sini memakai **Developer Product**: Robux-nya masuk ke pemilik
+experience. Itu pilihan pengguna ("donasi ke developer/game").
+
+> **Koreksi (2026-10-14):** catatan lama di sini menyatakan Roblox tidak punya
+> API untuk memindahkan Robux antar pemain. **Itu salah.** Dokumentasi resmi
+> (`production/monetization/robux-transfers.md`) memuat
+> `MarketplaceService:PromptRobuxTransferAsync(sender, receiverUserId, amount)`,
+> dan `ProcessReceipt` punya field `CurrencySpent`/`TransferRequestId` untuk
+> itu. Donasi antar pemain (gaya PLS DONATE) jadi mungkin tanpa gamepass —
+> belum diterapkan, dan syarat/kelayakannya belum dicek. Cek dokumentasi
+> terbaru (Context7: `/roblox/creator-docs`) sebelum merancangnya.
 
 > ⚠️ **Belum bisa dipakai sampai productId-nya diisi.** Developer Product tidak
 > bisa dibuat dari kode. Buat manual di Creator Dashboard → Monetization →
@@ -468,9 +487,29 @@ baru tercatat di server lain.
 **Kolom "Beli"/"Belanja"** diisi dari `PromptPurchaseFinished`. Event itu
 melaporkan apa kata dialog di CLIENT, jadi tidak dipercaya mentah-mentah —
 kepemilikannya diverifikasi ulang lewat `PlayerOwnsAsset` sebelum dihitung.
-Bentuk tabel `results` di `PromptBulkPurchaseFinished` **tidak didokumentasikan
-Roblox**, jadi dibaca defensif; kalau bentuknya berubah, yang terjadi cuma angka
-tidak bertambah, bukan error.
+**`PromptBulkPurchaseFinished` itu CLIENT-ONLY.** Pernah dipasang di server
+(di `Showroom` dan `Donations`) dan melempar *"can only be subscribed to from a
+local script"* saat script **dimuat** — seluruh `Showroom.server.luau` mati:
+mannequin abu-abu tanpa baju, tidak mengambang (tag `Mannequin` tak terpasang),
+tombol admin hilang (`GetMyRole` tak terpasang, superadmin terlihat seperti
+pemain biasa). Pemeriksaan statis (`selene`) tidak menangkap ini; baru ketahuan
+lewat Output Studio. Jalur yang benar sekarang:
+
+1. Server mencatat barang yang ia tawarkan saat membuka dialog borongan
+   (`rememberBulk` → `pendingBulk`), hanya yang **belum dimiliki** saat itu.
+2. Client mendengarkan `PromptBulkPurchaseFinished` dan cuma mengirim sinyal
+   kosong `BulkPurchaseDone` — tanpa hasil/isi apa pun.
+3. Server memverifikasi sendiri kepemilikan tiap barang di `pendingBulk` ke
+   Roblox, lalu mencatatnya. Sinyal client sekali pakai dan tidak bisa
+   menambah barang di luar daftar server.
+
+`StatsService.addAssetPurchase` mengabaikan aset yang sudah tercatat di sesi
+itu — tidak terdokumentasi apakah `PromptPurchaseFinished` ikut menyala untuk
+item dalam pembelian borongan, dan satu aset hanya bisa dibeli sekali per akun.
+
+**Aturan umum:** sebelum men-`Connect` event `MarketplaceService`/
+`AvatarEditorService` di server, pastikan event itu memang boleh di server —
+salah konteks = error saat load = seluruh script mati, bukan cuma fitur itu.
 
 `DonateClient` memakai 3 kolom sejajar di layar lebar dan menumpuk di layar
 sempit (`WIDE_BREAKPOINT`). Roblox tidak punya media query, jadi dipantau lewat
@@ -637,7 +676,11 @@ MicroProfiler `Ctrl+F6`) sebelum memilih jalur di atas.
 - Persistensi outfit admin **sudah ada** (DataStore, satu key `Overrides`, dimuat
   di awal `refreshAll()`) — tapi sama seperti `ManageAdmin`, baru benar-benar
   tersimpan setelah place di-publish minimal sekali (lihat poin di bawah)
-- `test1.rbxl` kemungkinan belum pernah di-publish ke Roblox — `DataStoreService:GetDataStore()`
+- **Update 2026-10-14:** place yang terbuka di Studio ("testing mall") ternyata **sudah
+  di-publish** (PlaceId `140187788240233`), jadi DataStore seharusnya bisa jalan --
+  asalkan Game Settings > Security > Enable Studio Access to API Services aktif.
+  Catatan lama di bawah dipertahankan sebagai riwayat.
+- (lama) `test1.rbxl` kemungkinan belum pernah di-publish ke Roblox — `DataStoreService:GetDataStore()`
   terbukti throw dengan "You must publish this place to the web to access DataStore."
   Sudah dibungkus `pcall` di `RoleService.luau` supaya tidak menjatuhkan seisi
   `Showroom.server.luau`, tapi konsekuensinya: `ManageAdmin` (grant/revoke admin

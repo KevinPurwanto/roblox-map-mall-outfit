@@ -185,15 +185,23 @@ local function prepare(rig: Model, gender: string)
 		end
 	end
 
-	-- Wajah itu Decal di dalam Head (nama bawaannya "face"). Dibuang lewat class,
-	-- bukan nama, karena rig hasil Rig Builder versi berbeda memakai nama berbeda.
+	-- Wajah bisa datang dalam DUA bentuk, tergantung jenis kepala:
+	--   * kepala klasik (R6/R15 lama): Decal "face" di dalam Head
+	--   * DYNAMIC HEAD (R15 dari Rig Builder sekarang): wajahnya adalah
+	--     TextureID dari Head (MeshPart) + FaceControls untuk ekspresi, TANPA Decal
+	-- Versi awal tool ini cuma membuang Decal -- di template R15 (RigMale/
+	-- RigFemale) itu tidak menghapus apa pun, dan pengecekan "berapa mannequin
+	-- masih punya Decal wajah" malah menjawab 0, seolah-olah sudah bersih.
 	if STRIP_FACE then
 		local head = rig:FindFirstChild("Head")
 		if head then
 			for _, d in ipairs(head:GetDescendants()) do
-				if d:IsA("Decal") or d:IsA("Texture") then
+				if d:IsA("Decal") or d:IsA("Texture") or d:IsA("FaceControls") or d:IsA("SurfaceAppearance") then
 					d:Destroy()
 				end
+			end
+			if head:IsA("MeshPart") then
+				head.TextureID = "" -- warna kepala lalu ikut BodyColors/Color, tanpa wajah
 			end
 		end
 	end

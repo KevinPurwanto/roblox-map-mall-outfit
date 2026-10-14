@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local CollectionService = game:GetService("CollectionService")
 local AvatarEditorService = game:GetService("AvatarEditorService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local MANNEQUIN_CLICK_TAG = "MannequinClickBox" -- dipasang server di Showroom.server.luau
 
@@ -27,6 +28,7 @@ local SearchCatalog = remotes:WaitForChild("SearchCatalog") :: RemoteFunction
 local LikeMannequin = remotes:WaitForChild("LikeMannequin") :: RemoteEvent
 local ResetLikes = remotes:WaitForChild("ResetLikes") :: RemoteEvent
 local LikesChanged = remotes:WaitForChild("LikesChanged") :: RemoteEvent
+local BulkPurchaseDone = remotes:WaitForChild("BulkPurchaseDone") :: RemoteEvent
 
 local Localization = require(ReplicatedStorage:WaitForChild("Localization"))
 local t = Localization.t
@@ -1252,4 +1254,21 @@ task.spawn(function()
 		end
 		task.wait(2)
 	end
+end)
+
+------------------------------------------------------------------
+-- Pembelian borongan selesai -> beri tahu server.
+--
+-- PromptBulkPurchaseFinished CUMA bisa didengarkan dari client (di server ia
+-- melempar error saat script dimuat dan mematikan seluruh Showroom.server.luau).
+-- Dialognya dibuka dari dua tempat (tombol "Beli Semua" di sini dan checkout
+-- keranjang di CartClient), tapi satu listener ini menangkap keduanya.
+--
+-- Sengaja tidak mengirim hasil/isi apa pun: server sudah mencatat barang yang
+-- ia tawarkan dan memverifikasi kepemilikannya sendiri ke Roblox. Sinyal ini
+-- cuma "dialognya sudah ditutup, silakan cek".
+------------------------------------------------------------------
+MarketplaceService.PromptBulkPurchaseFinished:Connect(function()
+	BulkPurchaseDone:FireServer()
+	invalidateInfo(nil) -- status "sudah punya" di panel mana pun bisa berubah
 end)

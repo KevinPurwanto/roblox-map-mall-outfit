@@ -17,6 +17,7 @@ local CollectionService = game:GetService("CollectionService")
 
 local Roles = require(ServerScriptService:WaitForChild("RoleService"))
 local Likes = require(ServerScriptService:WaitForChild("LikeService"))
+local Stats = require(ServerScriptService:WaitForChild("StatsService"))
 local Catalog = require(ReplicatedStorage:WaitForChild("MannequinCatalog"))
 
 local MANNEQUIN_FOLDER = "Mannequins"
@@ -134,6 +135,7 @@ local CartClear = ensure("RemoteEvent", "CartClear") :: RemoteEvent
 local BuyCart = ensure("RemoteEvent", "BuyCart") :: RemoteEvent
 local GetCart = ensure("RemoteFunction", "GetCart") :: RemoteFunction
 local CartUpdated = ensure("RemoteEvent", "CartUpdated") :: RemoteEvent
+local BulkPurchaseDone = ensure("RemoteEvent", "BulkPurchaseDone") :: RemoteEvent
 local LikeMannequin = ensure("RemoteEvent", "LikeMannequin") :: RemoteEvent
 local ResetLikes = ensure("RemoteEvent", "ResetLikes") :: RemoteEvent
 local LikesChanged = ensure("RemoteEvent", "LikesChanged") :: RemoteEvent
@@ -475,11 +477,57 @@ MarketplaceService.PromptPurchaseFinished:Connect(function(player: Player, _asse
 		forgetNotOwned(player)
 	end
 end)
-MarketplaceService.PromptBulkPurchaseFinished:Connect(function(player: Player)
+------------------------------------------------------------------
+-- Pembelian BORONGAN
+--
+-- PromptBulkPurchaseFinished itu CLIENT-ONLY. Dulu dipasang di sini dan melempar
+-- "can only be subscribed to from a local script" saat script DIMUAT -- seluruh
+-- Showroom.server.luau mati: mannequin tidak dipakaikan baju, prompt tidak
+-- dibuat, GetMyRole tidak terpasang (admin terlihat seperti pemain biasa).
+--
+-- Jalur yang benar: server MENCATAT apa yang ia tawarkan saat membuka dialog
+-- borongan (`pendingBulk`), client cuma mengirim sinyal "dialog sudah ditutup"
+-- (BulkPurchaseDone), lalu server MEMVERIFIKASI sendiri kepemilikan tiap item ke
+-- Roblox. Sinyal client tidak dipercaya: ia hanya bisa memicu pengecekan atas
+-- daftar yang dibuat server, tidak bisa menambah barang atau mengarang hasil.
+------------------------------------------------------------------
+local BULK_PENDING_TTL = 600 -- detik; dialog yang tidak pernah ditutup dibuang
+local pendingBulk: { [Player]: { ids: { number }, at: number } } = {}
+
+-- Yang dicatat cuma item yang BELUM dimiliki saat dialog dibuka: Roblox
+-- mengeluarkan barang yang sudah dimiliki dari checkout, jadi barang seperti
+-- itu bukan "pembelian" dan tidak boleh ikut terhitung.
+local function rememberBulk(player: Player, assetIds: { number })
+	local notOwned = {}
+	for _, assetId in ipairs(assetIds) do
+		if not ownsCached(player, assetId) then
+			table.insert(notOwned, assetId)
+		end
+	end
+	pendingBulk[player] = { ids = notOwned, at = os.clock() }
+end
+
+BulkPurchaseDone.OnServerEvent:Connect(function(player: Player)
+	local pending = pendingBulk[player]
+	pendingBulk[player] = nil -- sekali pakai: sinyal ganda tidak memproses ulang
 	forgetNotOwned(player)
+	if not pending or os.clock() - pending.at > BULK_PENDING_TTL then
+		return
+	end
+	for _, assetId in ipairs(pending.ids) do
+		task.spawn(function()
+			-- ownsCached SETELAH forgetNotOwned = pasti cek baru ke Roblox
+			if ownsCached(player, assetId) then
+				local info = getProductInfo(assetId)
+				Stats.addAssetPurchase(player, assetId, info and info.price or 0)
+			end
+		end)
+	end
 end)
+
 Players.PlayerRemoving:Connect(function(player: Player)
 	ownCache[player] = nil
+	pendingBulk[player] = nil
 end)
 
 -- Ambil info produk + kepemilikan semua item SEKALIGUS (paralel), bukan
@@ -920,6 +968,9 @@ BuyOutfit.OnServerEvent:Connect(function(player: Player, inst: any)
 		table.insert(lineItems, { Type = Enum.MarketplaceProductType.AvatarAsset, Id = tostring(assetId) })
 	end
 
+	-- dicatat dulu supaya BulkPurchaseDone tahu barang apa yang ditawarkan
+	rememberBulk(player, assetIds)
+
 	local ok, err = pcall(function()
 		(MarketplaceService :: any):PromptBulkPurchase(player, lineItems, {})
 	end)
@@ -1150,6 +1201,13 @@ BuyCart.OnServerEvent:Connect(function(player: Player)
 		MarketplaceService:PromptPurchase(player, cart[1].assetId)
 		return
 	end
+
+	-- dicatat dulu supaya BulkPurchaseDone tahu barang apa yang ditawarkan
+	local cartIds = {}
+	for _, entry in ipairs(cart) do
+		table.insert(cartIds, entry.assetId)
+	end
+	rememberBulk(player, cartIds)
 
 	local ok, err = pcall(function()
 		(MarketplaceService :: any):PromptBulkPurchase(player, lineItems, {})

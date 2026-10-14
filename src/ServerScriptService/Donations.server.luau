@@ -184,8 +184,11 @@ local function recordAssetPurchase(player: Player, assetId: number)
 	if not owns then
 		return
 	end
-	Stats.addPurchase(player, 1, priceOf(assetId))
-	broadcastStats()
+	-- addAssetPurchase menolak aset yang sudah tercatat di sesi ini, jadi aman
+	-- walau jalur borongan (Showroom.server.luau) juga mencatat barang yang sama
+	if Stats.addAssetPurchase(player, assetId, priceOf(assetId)) then
+		broadcastStats()
+	end
 end
 
 MarketplaceService.PromptPurchaseFinished:Connect(function(player: Player, assetId: number, isPurchased: boolean)
@@ -195,28 +198,10 @@ MarketplaceService.PromptPurchaseFinished:Connect(function(player: Player, asset
 	task.spawn(recordAssetPurchase, player, assetId)
 end)
 
--- Bentuk tabel `results` untuk pembelian borongan TIDAK didokumentasikan Roblox,
--- jadi dibaca defensif: cari apa pun yang menyerupai id aset di dalamnya, lalu
--- verifikasi satu per satu lewat PlayerOwnsAsset seperti pembelian satuan.
--- Kalau bentuknya berubah, yang terjadi cuma angka tidak bertambah -- bukan error.
-MarketplaceService.PromptBulkPurchaseFinished:Connect(function(player: Player, _status, results: any)
-	if typeof(results) ~= "table" then
-		return
-	end
-	task.spawn(function()
-		local seen: { [number]: boolean } = {}
-		for _, row in pairs(results :: { any }) do
-			local id: number? = nil
-			if typeof(row) == "table" then
-				id = tonumber(row.Id) or tonumber(row.id) or tonumber(row.AssetId)
-			end
-			if id and id > 0 and not seen[id] then
-				seen[id] = true
-				recordAssetPurchase(player, id)
-			end
-		end
-	end)
-end)
+-- PromptBulkPurchaseFinished TIDAK didengarkan di sini: event itu CLIENT-ONLY.
+-- Pernah dipasang di server dan melempar "can only be subscribed to from a local
+-- script" saat script dimuat -- itu mematikan sisa script ini. Pembelian
+-- borongan dicatat di Showroom.server.luau lewat remote BulkPurchaseDone.
 
 ------------------------------------------------------------------
 Players.PlayerAdded:Connect(function()

@@ -197,6 +197,32 @@ function StatsService.addPurchase(player: Player, count: number, robux: number)
 	StatsService.save(player)
 end
 
+-- Pembelian ASET (baju/aksesoris) dicatat dari dua jalur: pembelian satuan
+-- (PromptPurchaseFinished di server) dan pembelian borongan (sinyal dari client,
+-- diverifikasi server). Tidak terdokumentasi apakah PromptPurchaseFinished juga
+-- menyala untuk item di dalam pembelian borongan -- kalau iya, tanpa ini satu
+-- barang terhitung dua kali. Satu aset cuma bisa dibeli sekali per akun, jadi
+-- cukup diingat per sesi.
+local countedAssets: { [Player]: { [number]: boolean } } = {}
+
+function StatsService.addAssetPurchase(player: Player, assetId: number, robux: number): boolean
+	local set = countedAssets[player]
+	if not set then
+		set = {}
+		countedAssets[player] = set
+	end
+	if set[assetId] then
+		return false
+	end
+	set[assetId] = true
+	StatsService.addPurchase(player, 1, robux)
+	return true
+end
+
+Players.PlayerRemoving:Connect(function(player: Player)
+	countedAssets[player] = nil
+end)
+
 -- Status, bukan sekadar true/false -- pemanggilnya (ProcessReceipt) harus
 -- memutuskan apakah menjawab PurchaseGranted, dan jawaban yang salah di sini
 -- berarti Robux pemain hilang tanpa tercatat:
