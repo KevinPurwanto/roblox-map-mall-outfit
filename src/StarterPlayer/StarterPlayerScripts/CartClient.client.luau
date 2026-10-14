@@ -65,8 +65,8 @@ gui.Parent = player:WaitForChild("PlayerGui")
 ------------------------------------------------------------------
 local cartCorner = Instance.new("Frame")
 cartCorner.Name = "CartCorner"
-cartCorner.AnchorPoint = Vector2.new(0, 1)
-cartCorner.Position = UDim2.new(0, 16, 1, -16)
+cartCorner.AnchorPoint = Vector2.new(1, 0.5)
+cartCorner.Position = UDim2.new(1, -16, 0.5, -92)
 cartCorner.Size = UDim2.new(0, 64, 0, 82)
 cartCorner.BackgroundTransparency = 1
 cartCorner.Parent = gui
@@ -129,23 +129,38 @@ captionStroke.Color = Color3.new(1, 1, 1)
 captionStroke.Thickness = 2 -- garis putih supaya terbaca di atas lantai terang maupun gelap
 captionStroke.Parent = caption
 
+-- Modal di TENGAH layar, bukan panel menempel di sudut.
+--
+-- Sempat ditaruh menempel di sudut yang sama dengan tombolnya; begitu kolom ikon
+-- pindah ke kanan, panel ini jadi bertumpuk dengan panel outfit yang juga di
+-- kanan dan setinggi layar. Modal berlatar gelap menghindari tabrakan itu
+-- sepenuhnya sekaligus menyamakan rasanya dengan panel donasi.
+local backdrop = Instance.new("Frame")
+backdrop.Name = "CartBackdrop"
+backdrop.Size = UDim2.fromScale(1, 1)
+backdrop.BackgroundColor3 = Color3.new(0, 0, 0)
+backdrop.BackgroundTransparency = 0.45
+backdrop.BorderSizePixel = 0
+backdrop.Visible = false
+backdrop.ZIndex = 20
+backdrop.Parent = gui
+
 local panel = Instance.new("Frame")
 panel.Name = "CartPanel"
-panel.AnchorPoint = Vector2.new(0, 1)
-panel.Position = UDim2.new(0, 16, 1, -16)
+panel.AnchorPoint = Vector2.new(0.5, 0.5)
+panel.Position = UDim2.fromScale(0.5, 0.5)
 -- Tinggi ikut layar, dibatasi UISizeConstraint. Dulu 430 px tetap: di viewport
--- pendek panel melewati batas atas layar sekaligus menindih tombol pembukanya
--- sendiri di bawah.
-panel.Size = UDim2.new(0, 300, 1, -80)
+-- pendek panel melewati batas atas layar.
+panel.Size = UDim2.new(0, 340, 1, -80)
 panel.BackgroundColor3 = PAPER
 panel.BorderSizePixel = 0
-panel.Visible = false
-panel.Parent = gui
+panel.ZIndex = 21
+panel.Parent = backdrop
 corner(panel, 14)
 
 local panelSize = Instance.new("UISizeConstraint")
 panelSize.MinSize = Vector2.new(220, 260)
-panelSize.MaxSize = Vector2.new(300, 430)
+panelSize.MaxSize = Vector2.new(340, 460)
 panelSize.Parent = panel
 
 local stroke = Instance.new("UIStroke")
@@ -407,7 +422,7 @@ end)
 -- sama, jadi kalau keduanya tampil, tombol Tutup panel duduk persis di atas
 -- tombol keranjang -- terlihat seperti panel menutupi tombolnya sendiri.
 local function setOpen(open: boolean)
-	panel.Visible = open
+	backdrop.Visible = open
 	cartCorner.Visible = not open
 	if open then
 		statusLabel.Text = ""

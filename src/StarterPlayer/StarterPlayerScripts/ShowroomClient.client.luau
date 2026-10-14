@@ -41,6 +41,8 @@ local MUTED = Color3.fromRGB(130, 120, 125)
 
 local myRole = "PLAYER"
 local selected: Model? = nil
+-- cache data panel per mannequin; lihat bagian "Ambil-duluan" untuk alasannya
+local infoCache: { [Model]: { data: any, at: number } } = {}
 
 ------------------------------------------------------------------
 -- Helper UI
@@ -85,8 +87,8 @@ gui.Parent = player:WaitForChild("PlayerGui")
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.AnchorPoint = Vector2.new(1, 0.5)
-panel.Position = UDim2.new(1, -24, 0.5, 0)
-panel.Size = UDim2.new(0, 300, 1, -40)
+panel.Position = UDim2.new(1, -92, 0.5, 0) -- geser ke kiri, sisakan kolom ikon di tepi kanan
+panel.Size = UDim2.new(0, 430, 1, -40)
 panel.BackgroundColor3 = PAPER
 panel.BorderSizePixel = 0
 panel.Visible = false
@@ -94,8 +96,8 @@ panel.Parent = gui
 corner(panel, 14)
 
 local panelSize = Instance.new("UISizeConstraint")
-panelSize.MinSize = Vector2.new(220, 280)
-panelSize.MaxSize = Vector2.new(300, 860)
+panelSize.MinSize = Vector2.new(260, 300)
+panelSize.MaxSize = Vector2.new(430, 900)
 panelSize.Parent = panel
 
 local stroke = Instance.new("UIStroke")
@@ -117,6 +119,7 @@ pad.Parent = panel
 ------------------------------------------------------------------
 local HEADER_HEIGHT = 46
 local FOOTER_HEIGHT = 34
+local THUMB_HEIGHT = 112 -- tinggi gambar item di grid; dipakai buildItemTile
 
 local header = Instance.new("Frame")
 header.Name = "Header"
@@ -227,7 +230,7 @@ itemsScroller.LayoutOrder = 3
 itemsScroller.Parent = body
 
 local itemsGrid = Instance.new("UIGridLayout")
-itemsGrid.CellSize = UDim2.new(0, 86, 0, 176) -- +22 untuk tombol "+ Keranjang"
+itemsGrid.CellSize = UDim2.new(0, 128, 0, 182) -- 3 kolom di panel 430px
 itemsGrid.CellPadding = UDim2.new(0, 6, 0, 6)
 itemsGrid.SortOrder = Enum.SortOrder.LayoutOrder
 itemsGrid.Parent = itemsScroller
@@ -288,8 +291,10 @@ local function buildFavoriteButton(parent: GuiObject, assetId: number): TextButt
 	-- adalah pola yang sudah umum di aplikasi belanja
 	local btn = Instance.new("TextButton")
 	btn.Name = "Favorite"
-	btn.AnchorPoint = Vector2.new(1, 0)
-	btn.Position = UDim2.new(1, -3, 0, 3)
+	-- KIRI-atas: kanan-atas dipakai badge harga. Dulu dua-duanya di kanan dan
+	-- saling menimpa.
+	btn.AnchorPoint = Vector2.new(0, 0)
+	btn.Position = UDim2.new(0, 3, 0, 3)
 	btn.Size = UDim2.new(0, 22, 0, 22)
 	btn.BackgroundColor3 = Color3.new(1, 1, 1)
 	btn.BackgroundTransparency = 0.15
@@ -363,60 +368,92 @@ local function buildItemTile(item: any, order: number): Frame
 	local thumb = Instance.new("ImageLabel")
 	thumb.BackgroundColor3 = Color3.new(1, 1, 1)
 	thumb.Image = string.format("rbxthumb://type=Asset&id=%d&w=420&h=420", item.assetId)
-	thumb.Size = UDim2.new(1, 0, 0, 82)
+	thumb.Size = UDim2.new(1, 0, 0, THUMB_HEIGHT)
 	thumb.LayoutOrder = 1
 	thumb.Parent = tile
 	corner(thumb, 6)
 
+	-- Hati (favorit katalog Roblox) di KIRI, badge harga di KANAN -- dulu
+	-- keduanya di kanan dan saling menimpa
 	buildFavoriteButton(thumb, item.assetId)
 
+	-- Harga jadi badge kecil menempel di thumbnail, bukan baris teks sendiri.
+	-- Itu menghemat satu baris penuh per tile dan menyamakan tampilannya dengan
+	-- grid katalog Roblox, di mana harga selalu menempel pada gambarnya.
+	local priceBadge = Instance.new("TextLabel")
+	priceBadge.AnchorPoint = Vector2.new(1, 0)
+	priceBadge.Position = UDim2.new(1, -3, 0, 3)
+	priceBadge.AutomaticSize = Enum.AutomaticSize.X
+	priceBadge.Size = UDim2.new(0, 0, 0, 18)
+	priceBadge.BackgroundColor3 = Color3.new(1, 1, 1)
+	priceBadge.BackgroundTransparency = 0.1
+	priceBadge.BorderSizePixel = 0
+	priceBadge.Font = Enum.Font.GothamBold
+	priceBadge.TextSize = 11
+	priceBadge.TextColor3 = INK
+	priceBadge.ZIndex = 3
+	if item.owned then
+		priceBadge.Text = " ✓ "
+		priceBadge.TextColor3 = Color3.fromRGB(46, 150, 90)
+	elseif not item.forSale then
+		priceBadge.Text = " — "
+		priceBadge.TextColor3 = MUTED
+	elseif (item.price or 0) <= 0 then
+		priceBadge.Text = " " .. t("free") .. " "
+	else
+		priceBadge.Text = " R$ " .. tostring(item.price) .. " "
+	end
+	priceBadge.Parent = thumb
+	corner(priceBadge, 9)
+
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, 14)
+	label.Size = UDim2.new(1, 0, 0, 26)
 	label.BackgroundTransparency = 1
 	label.Text = tostring(item.label)
 	label.TextColor3 = INK
 	label.Font = Enum.Font.GothamMedium
-	label.TextSize = 10
+	label.TextSize = 11
+	label.TextWrapped = true
 	label.TextXAlignment = Enum.TextXAlignment.Center
-	label.TextTruncate = Enum.TextTruncate.AtEnd
+	label.TextYAlignment = Enum.TextYAlignment.Top
 	label.LayoutOrder = 2
 	label.Parent = tile
 
-	local status = Instance.new("TextLabel")
-	status.Size = UDim2.new(1, 0, 0, 12)
-	status.BackgroundTransparency = 1
-	status.TextColor3 = MUTED
-	status.Font = Enum.Font.Gotham
-	status.TextSize = 9
-	status.TextXAlignment = Enum.TextXAlignment.Center
-	status.LayoutOrder = 3
-	if item.owned then
-		status.Text = t("alreadyOwned")
-	elseif not item.forSale then
-		status.Text = t("notForSale")
-	else
-		status.Text = tostring(item.price) .. " " .. t("robux")
-	end
-	status.Parent = tile
+	-- Satu baris aksi: Beli melebar, keranjang cuma ikon persegi di sebelahnya.
+	-- Sebelumnya dua tombol lebar bertumpuk -- makan tinggi dua kali lipat
+	-- untuk dua aksi yang sebenarnya setara.
+	local actions = Instance.new("Frame")
+	actions.Size = UDim2.new(1, 0, 0, 26)
+	actions.BackgroundTransparency = 1
+	actions.LayoutOrder = 3
+	actions.Parent = tile
+
+	local actionList = Instance.new("UIListLayout")
+	actionList.FillDirection = Enum.FillDirection.Horizontal
+	actionList.Padding = UDim.new(0, 4)
+	actionList.SortOrder = Enum.SortOrder.LayoutOrder
+	actionList.Parent = actions
+
+	local canBuy = item.forSale and not item.owned
 
 	local beliBtn = Instance.new("TextButton")
-	beliBtn.Size = UDim2.new(1, 0, 0, 22)
+	beliBtn.Size = UDim2.new(1, -34, 1, 0)
 	beliBtn.BorderSizePixel = 0
 	beliBtn.Font = Enum.Font.GothamBold
-	beliBtn.TextSize = 11
+	beliBtn.TextSize = 12
 	beliBtn.TextColor3 = INK
-	local canBuy = item.forSale and not item.owned
 	beliBtn.Text = item.owned and t("owned") or (item.forSale and t("buy") or t("unavailable"))
 	beliBtn.BackgroundColor3 = canBuy and BLUE or Color3.fromRGB(225, 220, 222)
 	beliBtn.Active = canBuy
 	beliBtn.AutoButtonColor = canBuy
-	beliBtn.LayoutOrder = 4
-	beliBtn.Parent = tile
+	beliBtn.LayoutOrder = 1
+	beliBtn.Parent = actions
 	corner(beliBtn, 6)
 
 	beliBtn.MouseButton1Click:Connect(function()
 		if selected and canBuy then
 			BuyItem:FireServer(selected, item.assetId)
+			infoCache[selected] = nil -- status "sudah punya" akan berubah
 		end
 	end)
 
@@ -425,15 +462,15 @@ local function buildItemTile(item: any, order: number): Frame
 	-- di dialog checkout, dan melarangnya di sini malah bikin pemain mengira
 	-- tombolnya rusak.
 	local cartBtn = Instance.new("TextButton")
-	cartBtn.Size = UDim2.new(1, 0, 0, 20)
+	cartBtn.Size = UDim2.new(0, 30, 1, 0)
 	cartBtn.BorderSizePixel = 0
-	cartBtn.Font = Enum.Font.GothamMedium
-	cartBtn.TextSize = 10
+	cartBtn.Font = Enum.Font.GothamBold
+	cartBtn.TextSize = 14
 	cartBtn.TextColor3 = INK
-	cartBtn.Text = t("cartAddItem")
-	cartBtn.BackgroundColor3 = Color3.fromRGB(240, 228, 236)
-	cartBtn.LayoutOrder = 5
-	cartBtn.Parent = tile
+	cartBtn.Text = "🛒"
+	cartBtn.BackgroundColor3 = Color3.fromRGB(255, 205, 224)
+	cartBtn.LayoutOrder = 2
+	cartBtn.Parent = actions
 	corner(cartBtn, 6)
 
 	cartBtn.MouseButton1Click:Connect(function()
@@ -477,7 +514,7 @@ closeBtn.Size = UDim2.new(1, 0, 0, FOOTER_HEIGHT)
 -- Bagian admin
 ------------------------------------------------------------------
 local adminBox = Instance.new("Frame")
-adminBox.Size = UDim2.new(1, 0, 0, 254) -- +64 untuk dua tombol reset suka
+adminBox.Size = UDim2.new(1, 0, 0, 222) -- +32 untuk tombol reset suka podium ini
 adminBox.BackgroundColor3 = ROW_BG
 adminBox.BorderSizePixel = 0
 adminBox.Visible = false
@@ -531,27 +568,36 @@ resetLikeBtn.Size = UDim2.new(1, 0, 0, 26)
 resetLikeBtn.TextSize = 11
 resetLikeBtn.Visible = false
 
-local resetAllLikeBtn = button(t("likeResetAll"), Color3.fromRGB(240, 205, 212), 7, adminBox)
-resetAllLikeBtn.Size = UDim2.new(1, 0, 0, 26)
-resetAllLikeBtn.TextSize = 11
-resetAllLikeBtn.Visible = false
+-- "Reset SEMUA suka" sengaja TIDAK ada di panel mannequin -- terlalu dekat
+-- dengan tombol yang sering diklik, dan dampaknya ke 240 mannequin sekaligus.
+-- Pindah ke panel "Kelola Semua Podium" dengan konfirmasi ketik "RESET".
 
--- Tombol yang perlu konfirmasi: klik pertama mengubah teksnya, klik kedua dalam
--- 4 detik baru mengeksekusi.
+-- Tombol yang perlu konfirmasi: klik pertama mengubah teksnya, klik kedua baru
+-- mengeksekusi -- tapi HANYA kalau jaraknya minimal ARM_DELAY. Tanpa jeda itu,
+-- double-click biasa (dua klik dalam ~0,3 detik) langsung lolos konfirmasi,
+-- padahal tujuan konfirmasi justru menangkap klik yang tidak disengaja.
+local ARM_DELAY = 0.8 -- detik; jauh di atas jeda double-click
+local ARM_WINDOW = 4 -- detik; setelah ini konfirmasi kedaluwarsa
+
 local function armConfirm(btn: TextButton, label: string, action: () -> ())
-	local armed = false
+	local armedAt: number? = nil
 	btn.MouseButton1Click:Connect(function()
-		if armed then
-			armed = false
+		local now = os.clock()
+		if armedAt then
+			if now - armedAt < ARM_DELAY then
+				return -- terlalu cepat: anggap bagian dari double-click, abaikan
+			end
+			armedAt = nil
 			btn.Text = label
 			action()
 			return
 		end
-		armed = true
+		armedAt = now
 		btn.Text = t("likeResetConfirm")
-		task.delay(4, function()
-			if armed then
-				armed = false
+		local thisArm = now
+		task.delay(ARM_WINDOW, function()
+			if armedAt == thisArm then
+				armedAt = nil
 				btn.Text = label
 			end
 		end)
@@ -562,9 +608,6 @@ armConfirm(resetLikeBtn, t("likeReset"), function()
 	if selected then
 		ResetLikes:FireServer(selected)
 	end
-end)
-armConfirm(resetAllLikeBtn, t("likeResetAll"), function()
-	ResetLikes:FireServer(nil)
 end)
 
 -- ambil angka pertama dari teks -- terima link katalog penuh maupun assetId polos
@@ -602,7 +645,7 @@ end
 local searchPanel = Instance.new("Frame")
 searchPanel.Name = "SearchPanel"
 searchPanel.AnchorPoint = Vector2.new(1, 0.5)
-searchPanel.Position = UDim2.new(1, -336, 0.5, 0) -- persis di kiri panel utama (300 + 24 margin + 12 jarak)
+searchPanel.Position = UDim2.new(1, -534, 0.5, 0) -- di kiri panel utama (92 + 430 + 12)
 -- ikut tinggi layar seperti panel utama, supaya tombol Tutup-nya tidak pernah
 -- terdorong keluar layar di viewport pendek
 searchPanel.Size = UDim2.new(0, 320, 1, -40)
@@ -915,12 +958,64 @@ end)
 ------------------------------------------------------------------
 -- Logika
 ------------------------------------------------------------------
-local function open(mannequin: Model)
-	local data = GetMannequin:InvokeServer(mannequin)
-	if not data then
+------------------------------------------------------------------
+-- Ambil-duluan (prefetch) + cache data mannequin
+--
+-- Dulu open() menunggu InvokeServer dulu baru panel muncul -- terasa delay,
+-- apalagi server dulu memeriksa kepemilikan item satu per satu ke web Roblox.
+-- Sekarang dua hal:
+--   1. Begitu tombol "E" sebuah mannequin MUNCUL (= pemain sudah dekat),
+--      datanya diambil di belakang layar. Saat diklik, biasanya sudah siap.
+--   2. Kalau belum siap, panel tetap terbuka SEKETIKA dengan status memuat,
+--      lalu terisi begitu data datang -- bukan diam menunggu.
+------------------------------------------------------------------
+local CACHE_TTL = 15 -- detik; cukup pendek supaya harga/status jual tidak basi
+-- (infoCache dideklarasikan di atas, dekat `selected` -- tile item yang
+-- dibangun lebih dulu juga perlu membuangnya saat tombol Beli diklik)
+local inflight: { [Model]: boolean } = {}
+local openToken = 0 -- membuang jawaban lama kalau pemain keburu membuka mannequin lain
+
+local function freshCache(mannequin: Model): any
+	local entry = infoCache[mannequin]
+	if entry and os.clock() - entry.at < CACHE_TTL then
+		return entry.data
+	end
+	return nil
+end
+
+local function fetchInfo(mannequin: Model): any
+	local ok, data = pcall(function()
+		return GetMannequin:InvokeServer(mannequin)
+	end)
+	if ok and data then
+		infoCache[mannequin] = { data = data, at = os.clock() }
+		return data
+	end
+	return nil
+end
+
+local function prefetch(mannequin: Model)
+	if inflight[mannequin] or freshCache(mannequin) then
 		return
 	end
+	inflight[mannequin] = true
+	task.spawn(function()
+		fetchInfo(mannequin)
+		inflight[mannequin] = nil
+	end)
+end
 
+-- Kepemilikan & stok berubah setelah membeli; cache dibuang supaya panel
+-- berikutnya tidak menampilkan "Beli" untuk barang yang baru saja dibeli.
+local function invalidateInfo(mannequin: Model?)
+	if mannequin then
+		infoCache[mannequin] = nil
+	else
+		table.clear(infoCache)
+	end
+end
+
+local function render(mannequin: Model, data: any)
 	selected = mannequin
 	title.Text = data.name
 	subInfo.Text = t("podiumGenderLine", data.podiumIndex, data.gender == "F" and t("girl") or t("boy"))
@@ -961,6 +1056,51 @@ local function open(mannequin: Model)
 
 	panel.Visible = true
 end
+
+local function open(mannequin: Model, forceFresh: boolean?)
+	openToken += 1
+	local myToken = openToken
+
+	if forceFresh then
+		invalidateInfo(mannequin)
+	end
+
+	local cached = freshCache(mannequin)
+	if cached then
+		render(mannequin, cached) -- seketika, tanpa menunggu server
+		return
+	end
+
+	-- Belum ada data: panel dibuka SEKARANG dalam keadaan memuat, bukan diam
+	-- menunggu. Isi lama dikosongkan supaya tidak sempat terlihat seperti
+	-- milik mannequin yang baru diklik.
+	selected = mannequin
+	title.Text = "..."
+	subInfo.Text = t("searchSearching")
+	rebuildItems({})
+	buyAllBtn.Visible = false
+	addAllBtn.Visible = false
+	panel.Visible = true
+
+	local data = fetchInfo(mannequin)
+	if myToken ~= openToken then
+		return -- pemain sudah membuka mannequin lain sementara ini menunggu
+	end
+	if not data then
+		subInfo.Text = t("searchFailed")
+		return
+	end
+	render(mannequin, data)
+end
+
+-- Tombol "E" muncul = pemain sudah cukup dekat untuk kemungkinan membuka panel
+-- -> saat yang tepat mengambil data duluan
+ProximityPromptService.PromptShown:Connect(function(prompt: ProximityPrompt)
+	local mannequin = prompt.Parent and prompt.Parent.Parent
+	if mannequin and mannequin:IsA("Model") and mannequin:GetAttribute("PodiumIndex") then
+		prefetch(mannequin)
+	end
+end)
 
 local function close()
 	panel.Visible = false
@@ -1017,6 +1157,7 @@ end)
 buyAllBtn.MouseButton1Click:Connect(function()
 	if selected then
 		BuyOutfit:FireServer(selected)
+		invalidateInfo(selected)
 	end
 end)
 
@@ -1053,7 +1194,21 @@ end)
 -- suka") cuma dikirim ke pemain yang bersangkutan, jadi di sini bisa nil --
 -- kalau nil, status pribadi dibiarkan apa adanya.
 LikesChanged.OnClientEvent:Connect(function(key: any, total: any, mine: any)
-	if typeof(key) ~= "string" or key ~= selectedLikeKey then
+	if typeof(key) ~= "string" then
+		return
+	end
+	-- data di cache ikut diperbarui -- kalau tidak, membuka ulang mannequin ini
+	-- dalam 15 detik menampilkan angka suka yang lama
+	for _, entry in pairs(infoCache) do
+		local d = entry.data
+		if tostring(d.podiumIndex) .. "_" .. tostring(d.gender) == key then
+			d.likes = tonumber(total) or d.likes
+			if typeof(mine) == "boolean" then
+				d.likedByMe = mine
+			end
+		end
+	end
+	if key ~= selectedLikeKey then
 		return
 	end
 	likeCount = tonumber(total) or likeCount
@@ -1072,7 +1227,7 @@ saveBtn.MouseButton1Click:Connect(function()
 	SetOutfit:FireServer(selected, shirtId, pantsId)
 	SetAccessories:FireServer(selected, extractIds(accessoriesField.Text))
 	task.wait(0.2)
-	open(selected)
+	open(selected, true) -- paksa ambil ulang: isinya baru saja diubah
 end)
 
 ------------------------------------------------------------------
@@ -1092,7 +1247,6 @@ task.spawn(function()
 		adminBox.Visible = isAdmin
 		-- reset suka khusus SUPERADMIN, bukan admin biasa (server juga mengecek ulang)
 		resetLikeBtn.Visible = myRole == "SUPERADMIN"
-		resetAllLikeBtn.Visible = myRole == "SUPERADMIN"
 		if not isAdmin then
 			searchPanel.Visible = false
 		end

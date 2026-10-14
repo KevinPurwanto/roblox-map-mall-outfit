@@ -96,6 +96,11 @@ lebar bahu 4 studs (torso 2 + lengan 1+1).
 - **Cowok** — rig polos, tanpa `CharacterMesh`
 - **Cewek** — punya 5 `CharacterMesh` paket Woman + accessory "Kate Hair"
 
+Itu isi *template*-nya. Mannequin hasil `tools/place_mannequins.luau` sengaja
+dibuat polos: wajah (Decal di Head) dan semua Accessory bawaan dibuang
+(`STRIP_FACE`, `STRIP_HAIR`). Wajah dibuang lewat class, bukan nama "face",
+karena rig dari Rig Builder versi berbeda memakai nama berbeda.
+
 MeshId paket Woman, kalau perlu membuat rig cewek baru dari rig cowok:
 
 | BodyPart | MeshId |
@@ -209,6 +214,30 @@ akan pernah menyala. Jadi dipakai satu part tak-terlihat seukuran bounding box
 mannequin dengan `CanQuery = true`. Ukurannya diambil **sebelum**
 `OutfitPromptAnchor` dibuat, kalau tidak kotaknya jadi kelewat tinggi.
 
+**Semua part lain di mannequin WAJIB `CanQuery = false`, termasuk aksesoris.**
+Bug yang pernah terjadi: aksesoris dipasang server lewat `AddAccessory`, yang
+membawa setelan bawaan Roblox (`CanQuery = true`, tidak di-anchor). Mouse
+mengenai rambut/topi duluan, kotak klik di belakangnya tidak pernah tersentuh.
+Gejalanya: kursor tetap panah (bukan tangan) di mannequin beraksesoris, sementara
+yang tanpa aksesoris bisa diklik. Sekarang `applyTo()` mengunci ulang SEMUA
+BasePart kecuali `OutfitClickBox` setiap kali outfit dipasang.
+
+**Kecepatan membuka panel** — dua lapis:
+
+- **Server:** kepemilikan item di-cache per pemain (`ownsCached`). "Sudah punya"
+  disimpan selamanya (tidak bisa hilang di tengah sesi); "belum punya" cuma 60
+  detik dan langsung dibuang saat pemain membeli sesuatu. Info produk +
+  kepemilikan semua item diambil **paralel** (`prefetchItems`), jadi waktu
+  tunggu = panggilan web paling lambat, bukan jumlah semuanya. Dulu
+  `PlayerOwnsAsset` dipanggil berurutan per item, tanpa cache, setiap panel
+  dibuka — itulah sumber delay-nya.
+- **Client:** data mannequin **diambil duluan** saat tombol "E"-nya muncul
+  (`ProximityPromptService.PromptShown` = pemain sudah dekat), di-cache 15 detik.
+  Kalau belum siap saat diklik, panel tetap terbuka **seketika** dalam keadaan
+  memuat, bukan diam menunggu. `openToken` membuang jawaban lama kalau pemain
+  keburu membuka mannequin lain. Cache dibuang saat tombol Beli diklik dan saat
+  admin menyimpan; angka suka di cache ikut diperbarui lewat `LikesChanged`.
+
 ### Tag `"Mannequin"` / `"MannequinClickBox"`
 
 Server memasang dua tag CollectionService di `refreshAll()`/`setupPrompt()`. Tag
@@ -289,18 +318,35 @@ bersama semua pemain, jadi menulis tiap klik gampang kena rate limit DataStore
 dan saling menimpa. Kehilangan maksimal 30 detik terakhir jauh lebih murah
 daripada write yang ditolak.
 
-Reset hanya **SUPERADMIN** (dicek ulang di server), butuh klik dua kali di UI
-karena angkanya tidak bisa dikembalikan. Reset juga membersihkan daftar "sudah
-disuka" pemain yang sedang online — kalau tidak, tombolnya masih menyala merah
-padahal hitungannya sudah nol.
+Reset hanya **SUPERADMIN** (dicek ulang di server). Dua tingkat pengaman,
+sesuai besar dampaknya:
+
+| Reset | Di mana | Pengaman |
+|---|---|---|
+| satu podium | kotak admin di panel mannequin | klik dua kali, **jeda minimal 0,8 detik** di antaranya |
+| SEMUA mannequin | header panel "Kelola Semua Podium" | dialog terpisah, harus **mengetik `RESET`** |
+
+Reset SEMUA sengaja **tidak** ada di panel mannequin: dulu sempat di sana, tapi
+duduk dekat tombol Simpan yang sering diklik, dan pengaman "klik sekali lagi"
+**lolos oleh double-click biasa** (dua klik ~0,3 detik). Itu juga sebabnya
+`armConfirm` sekarang mengabaikan klik kedua yang datang < 0,8 detik — klik
+secepat itu hampir pasti bagian dari double-click, bukan konfirmasi sadar.
+Di dialog Reset SEMUA, Batal di kiri dan menonjol; tombol hapus pudar sampai
+kata konfirmasinya benar.
+
+Reset juga membersihkan daftar "sudah disuka" pemain yang sedang online — kalau
+tidak, tombolnya masih menyala merah padahal hitungannya sudah nol.
 
 ### Accessories (rambut, topi, dll) dan beli satuan/borongan
 
 `MannequinCatalog.Outfit.accessories` (opsional) — list `{ assetId, price?, label? }`,
 Accessory **classic** saja (bukan Layered Clothing). Beda dari shirt/pants:
-tidak bisa di-override lewat attribute per-mannequin (Roblox Attribute tidak
-bisa nyimpan list) — jadi accessory cuma diatur lewat `MannequinCatalog.luau`,
-tidak lewat panel admin "Simpan ke mannequin".
+tidak bisa di-override lewat **attribute** (Roblox Attribute tidak bisa
+nyimpan list), jadi override aksesoris disimpan di DataStore override
+(`OutfitOverride.accessoryIds`) lewat remote `SetAccessories`. Remote itu butuh
+**Instance** mannequin, jadi aksesoris hanya bisa diubah dari kotak admin di
+panel mannequin langsung — tidak dari "Kelola Semua Podium", yang cuma
+memegang nomor podium.
 
 Status jual + harga yang ditampilkan ke pemain diambil **live** dari
 `MarketplaceService:GetProductInfo()` (field `IsForSale`/`PriceInRobux`), bukan
@@ -380,8 +426,8 @@ Dua jebakan yang sudah ditangani:
 
 ### Donasi & statistik pemain
 
-`StatsService.luau` (modul) + `Donations.server.luau` + dua panel client:
-`ServerStatsClient` (tabel kanan-atas) dan `DonateClient` (modal donasi).
+`StatsService.luau` (modul) + `Donations.server.luau` + `DonateClient` (modal
+donasi). Angka per pemain tampil di `leaderstats` bawaan Roblox (lihat bawah).
 
 **Robux TIDAK bisa dipindahkan antar pemain.** Roblox tidak punya API untuk itu.
 Satu-satunya cara Robux berpindah adalah pemain membeli sesuatu — jadi donasi di
@@ -467,6 +513,35 @@ dipetakan Rojo), jadi `SprintSupport.server.luau` membuangnya saat runtime.
 Hapus manual di StarterPack (Edit mode) kalau mau permanen — setelah itu blok
 `removeObsoleteTool` boleh ikut dihapus.
 
+### Kelola Semua Podium (panel admin)
+
+`AdminPanelClient.client.luau` — peta 120 podium + panel detail. Desain lama
+(120 baris kotak teks ID mentah) punya tiga masalah, masing-masing dijawab satu
+fitur:
+
+| Masalah | Jawaban |
+|---|---|
+| Tidak kelihatan mana yang belum diisi | kotak berwarna per status (abu = kosong, kuning = sebagian, hijau = lengkap), titik M/F di tiap kotak, filter status, bar progres "x/240 terisi" |
+| Angka ID tidak bisa dicek benar/salah | pratinjau thumbnail langsung saat kolom ditinggalkan — ID tekstur yang salah tempel langsung kelihatan flat, bukan render mannequin |
+| "Podium 47 itu yang mana di map?" | tombol **Teleport ke sini** (pakai `TeleportToPodium` yang sudah ada), panel menutup sendiri supaya mannequin-nya langsung terlihat |
+
+Status dihitung per mannequin: terisi = `shirt > 0 or pants > 0`. Podium
+"sebagian" = salah satu dari M/F terisi — titik M/F ada supaya admin tahu
+**sisi mana** yang kurang, bukan cuma "ada yang kurang".
+
+Simpan memperbarui data lokal langsung (warna kotak & progres berubah tanpa
+memuat ulang 240 mannequin). Server tidak membalas `SetOutfitByIndex`, jadi
+kalau perlu memastikan, pakai **Muat ulang**. Kosongkan butuh dua klik — tidak
+ada undo, dan efeknya langsung terlihat semua pemain.
+
+Aksesoris **tidak** bisa diubah dari panel ini: `SetAccessories` butuh Instance
+mannequin, bukan cuma nomor podium. Panel menuliskan jumlah aksesorisnya dan
+menyuruh mengubah lewat panel mannequin langsung — sengaja diberi tahu, bukan
+disembunyikan diam-diam.
+
+Di jendela < 720 px, detail menutupi grid (dengan tombol Kembali) alih-alih
+berdampingan.
+
 ### Aturan layout UI
 
 Semua panel dibangun lewat kode, jadi tidak ada editor yang memperingatkan kalau
@@ -490,9 +565,28 @@ luar layar). Aturannya sekarang:
    sama.** Keranjang menyembunyikan tombolnya sendiri saat panel terbuka —
    kalau tidak, tombol Tutup panel duduk persis di atas tombol keranjang.
 
-Pembagian sudut layar saat ini: kiri-atas = tombol admin & debug, kiri-bawah =
-keranjang, kanan = panel outfit, kiri panel outfit = panel pencarian katalog,
-kanan-bawah = tombol lompat/lari bawaan Roblox di HP.
+Pembagian layar saat ini:
+
+| Area | Isi |
+|---|---|
+| kiri-atas | tombol admin & debug |
+| tepi kanan (kolom ikon bulat) | Keranjang (`0.5, -92`), Donasi (`0.5, 0`), Sembunyikan UI (`0.5, +92`) |
+| kanan, digeser `-92` | panel outfit (lebar 430, menyisakan ruang untuk kolom ikon) |
+| kiri panel outfit (`-534`) | panel pencarian katalog |
+| tengah (modal + latar gelap) | keranjang, donasi, kelola semua podium |
+| kanan-atas | daftar pemain bawaan Roblox (`leaderstats`) |
+| kanan-bawah | tombol lompat/lari bawaan Roblox di HP |
+
+Panel yang setinggi layar (panel outfit) dan panel yang menempel di sudut tidak
+boleh berada di sisi yang sama — keranjang sempat begitu dan langsung bertumpuk.
+Kalau ragu, jadikan modal di tengah.
+
+**Sembunyikan UI** (`HideGuiClient`) mematikan `Enabled` semua ScreenGui kecuali
+dirinya sendiri, plus `PlayerList`/`Chat`/`Backpack`/`EmotesMenu` lewat
+`SetCoreGuiEnabled`. Keadaan sebelum disembunyikan **disimpan dulu**, bukan
+di-set `true` saat dipulihkan — kalau tidak, panel yang memang sedang tertutup
+(mis. panel outfit yang belum dibuka) ikut menyala saat UI ditampilkan lagi.
+`DisplayOrder = 50` menjaga tombolnya selalu di atas panel lain.
 
 ## Aturan yang tidak boleh dilanggar
 
@@ -513,16 +607,30 @@ kanan-bawah = tombol lompat/lari bawaan Roblox di HP.
 Tiap rig ±67–87 descendant. 120 podium × 2 = **240 mannequin**, artinya sekitar
 19.000 instance baru di atas 13.630 yang sudah ada. Kalau berat:
 
-- set `KEEP_ACCESSORIES = false` di `tools/place_mannequins.luau`
+- aksesoris bawaan rig sudah dibuang (`STRIP_HAIR = true` di
+  `tools/place_mannequins.luau`); sisa pengurangan: kurangi aksesoris yang
+  dipasang dari katalog
 - hapus `CharacterMesh` dan `BodyColors` dari clone
 - atau ganti rig dengan satu MeshPart mannequin statis
 
-`StreamingEnabled` sudah aktif dan cukup membantu.
+**Jangan andalkan `StreamingEnabled` di map ini.** Radius streaming default
+Roblox 512 stud, sementara seluruh map cuma ±421 × 331 stud — jadi praktis
+semua mannequin selalu termuat. Culling manual berdasar jarak juga **tidak**
+disarankan: GPU sudah tidak menggambar yang di luar layar (frustum culling) +
+LOD otomatis, menyembunyikan mannequin tidak mengurangi instance count maupun
+memori tekstur, dan mannequin yang kosong dari jauh merusak fungsi showroom.
+Kalau terasa berat, **ukur dulu** (Performance Stats `Ctrl+Shift+F2`,
+MicroProfiler `Ctrl+F6`) sebelum memilih jalur di atas.
 
 ## Yang belum dikerjakan
 
-- `MannequinCatalog.entries` baru ada contoh untuk podium 1–2 (assetId masih `0`,
-  placeholder), podium 3–120 belum diisi sama sekali
+- `MannequinCatalog.entries` baru ada contoh untuk podium 1–2 (podium 1 cowok
+  sudah berisi ID katalog asli, sisanya `0`); podium 3–120 belum diisi sama
+  sekali — pengisian sehari-hari lebih praktis lewat panel "Kelola Semua
+  Podium" (tersimpan di DataStore override), bukan mengedit file ini
+- Mannequin tanpa wajah & rambut (`STRIP_FACE`/`STRIP_HAIR` di
+  `tools/place_mannequins.luau`) baru berlaku setelah tool itu **dijalankan
+  ulang** di Command Bar
 - `SUPERADMINS` di `RoleService.luau`: superadmin pertama (`concreabot`, UserId
   `9954653030`) sudah permanen. Slot kedua masih placeholder `[0]` (aman, tidak
   match akun manapun) — ganti dengan UserId asli begitu sudah ditentukan siapa

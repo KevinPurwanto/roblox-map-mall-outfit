@@ -414,8 +414,111 @@ end
 
 -- daftar item siap-tampil (thumbnail + harga live + status jual) untuk panel
 -- pembelian -- beda dari outfitOf() yang cuma dipakai internal (render/attribute)
+------------------------------------------------------------------
+-- Cache kepemilikan + pengambilan paralel
+--
+-- PENYEBAB DELAY panel dulu: tiap kali dibuka, PlayerOwnsAsset (panggilan web
+-- ke Roblox) dipanggil SATU PER SATU untuk tiap item, tanpa cache. Mannequin
+-- 4 item = 4-5 panggilan web berurutan, setiap kali dibuka, termasuk mannequin
+-- yang barusan dibuka.
+--
+-- "Sudah punya" di-cache SELAMANYA: kepemilikan tidak bisa hilang di tengah
+-- sesi. "Belum punya" cuma sebentar, dan langsung dibuang begitu pemain membeli
+-- sesuatu -- kalau tidak, panel masih menampilkan "Beli" untuk barang yang baru
+-- saja dibeli.
+------------------------------------------------------------------
+local NOT_OWNED_TTL = 60 -- detik
+local ownCache: { [Player]: { [number]: { owned: boolean, at: number } } } = {}
+
+local function cachedOwn(player: Player, assetId: number): boolean?
+	local entry = ownCache[player] and ownCache[player][assetId]
+	if not entry then
+		return nil
+	end
+	if entry.owned or os.clock() - entry.at < NOT_OWNED_TTL then
+		return entry.owned
+	end
+	return nil
+end
+
+local function ownsCached(player: Player, assetId: number): boolean
+	if assetId <= 0 then
+		return false
+	end
+	local hit = cachedOwn(player, assetId)
+	if hit ~= nil then
+		return hit
+	end
+	local owned = Roles.owns(player, assetId)
+	ownCache[player] = ownCache[player] or {}
+	ownCache[player][assetId] = { owned = owned, at = os.clock() }
+	return owned
+end
+
+local function forgetNotOwned(player: Player)
+	local entries = ownCache[player]
+	if not entries then
+		return
+	end
+	for assetId, entry in pairs(entries) do
+		if not entry.owned then
+			entries[assetId] = nil
+		end
+	end
+end
+
+-- Beli = cache "belum punya" pemain itu dibuang. Sengaja dibuang semua, bukan
+-- cuma assetId yang dibeli: pembelian borongan tidak memberi tahu dengan rapi
+-- item mana saja yang berhasil.
+MarketplaceService.PromptPurchaseFinished:Connect(function(player: Player, _assetId: number, isPurchased: boolean)
+	if isPurchased then
+		forgetNotOwned(player)
+	end
+end)
+MarketplaceService.PromptBulkPurchaseFinished:Connect(function(player: Player)
+	forgetNotOwned(player)
+end)
+Players.PlayerRemoving:Connect(function(player: Player)
+	ownCache[player] = nil
+end)
+
+-- Ambil info produk + kepemilikan semua item SEKALIGUS (paralel), bukan
+-- berurutan. Waktu tunggu jadi sepanjang panggilan web paling lambat, bukan
+-- jumlah semuanya. Yang sudah ada di cache tidak memanggil web sama sekali.
+local function prefetchItems(player: Player, assetIds: { number })
+	local thread = coroutine.running()
+	local pending = 0
+	local waiting = false
+	for _, assetId in ipairs(assetIds) do
+		if assetId > 0 then
+			pending += 1
+			task.spawn(function()
+				getProductInfo(assetId)
+				ownsCached(player, assetId)
+				pending -= 1
+				if pending == 0 and waiting then
+					task.spawn(thread)
+				end
+			end)
+		end
+	end
+	-- semua bisa saja sudah selesai seketika (semua dari cache) -> jangan menunggu
+	if pending > 0 then
+		waiting = true
+		coroutine.yield()
+	end
+end
+
 local function buildItemList(outfit: ResolvedOutfit, player: Player)
 	local items = {}
+
+	-- semua panggilan web jalan paralel DULU; addItem di bawah lalu cuma
+	-- membaca cache, tidak menunggu apa pun lagi
+	local ids = { outfit.shirt, outfit.pants }
+	for _, acc in ipairs(outfit.accessories) do
+		table.insert(ids, acc.assetId)
+	end
+	prefetchItems(player, ids)
 
 	local function addItem(assetId: number, kind: string, catalogPrice: number, catalogLabel: string?)
 		if assetId <= 0 then
@@ -429,7 +532,7 @@ local function buildItemList(outfit: ResolvedOutfit, player: Player)
 			price = price,
 			forSale = forSale,
 			label = catalogLabel or (info and info.name) or kind,
-			owned = Roles.owns(player, assetId),
+			owned = ownsCached(player, assetId),
 		})
 	end
 
@@ -489,6 +592,23 @@ local function applyTo(mannequin: Model)
 		pants.Parent = mannequin
 	end
 	applyAccessoriesTo(mannequin, outfit.accessories)
+
+	-- Aksesoris dari AddAccessory datang dengan setelan bawaan Roblox:
+	-- CanQuery = true, tidak di-anchor. Badan mannequin sengaja CanQuery = false
+	-- (place_mannequins.luau), tapi aksesoris yang dipasang belakangan di sini
+	-- tidak pernah ikut diatur -- akibatnya klik mouse mengenai rambut/topi
+	-- DULUAN, dan karena aksesoris tidak punya ClickDetector, kliknya hilang.
+	-- Gejalanya: mannequin tanpa aksesoris bisa diklik, yang beraksesoris tidak.
+	-- Sekalian menegakkan aturan "mannequin adalah patung" (semua part di-anchor).
+	-- OutfitClickBox dikecualikan: justru dia satu-satunya yang HARUS bisa kena klik.
+	for _, d in ipairs(mannequin:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "OutfitClickBox" then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+		end
+	end
 end
 
 local function setupPrompt(mannequin: Model)
@@ -614,7 +734,7 @@ GetMannequin.OnServerInvoke = function(player: Player, inst: any)
 		shirt = outfit.shirt,
 		pants = outfit.pants,
 		price = outfit.price,
-		owned = outfit.shirt > 0 and Roles.owns(player, outfit.shirt) or false,
+		owned = ownsCached(player, outfit.shirt),
 		items = buildItemList(outfit, player), -- dipakai panel thumbnail (beli satuan/semua)
 		likes = Likes.count(likeKeyOf(mannequin)),
 		likedByMe = Likes.likedBy(player, likeKeyOf(mannequin)),
@@ -632,7 +752,7 @@ GetAllMannequins.OnServerInvoke = function(player: Player)
 		return {}
 	end
 
-	local list: { { podiumIndex: number, gender: string, name: string, shirt: number, pants: number, price: number } } = {}
+	local list: { any } = {}
 	for _, child in ipairs(folder:GetChildren()) do
 		local mannequin = validMannequin(child)
 		if mannequin then
@@ -645,6 +765,10 @@ GetAllMannequins.OnServerInvoke = function(player: Player)
 				shirt = outfit.shirt,
 				pants = outfit.pants,
 				price = outfit.price,
+				-- dipakai peta podium untuk menilai "lengkap/sebagian/kosong" dan
+				-- menampilkan popularitas, tanpa perlu membuka tiap mannequin
+				accessoryCount = #outfit.accessories,
+				likes = Likes.count(likeKeyOf(mannequin)),
 			})
 		end
 	end
@@ -905,6 +1029,13 @@ end
 local function cartPayload(player: Player)
 	local cart = cartOf(player)
 	local items = {}
+	-- keranjang bisa 20 item: tanpa ini, 20 panggilan web berurutan tiap kali
+	-- isinya berubah
+	local ids = {}
+	for _, entry in ipairs(cart) do
+		table.insert(ids, entry.assetId)
+	end
+	prefetchItems(player, ids)
 	for _, entry in ipairs(cart) do
 		local forSale, price = resolveAvailability(entry.assetId, 0)
 		table.insert(items, {
@@ -913,7 +1044,7 @@ local function cartPayload(player: Player)
 			label = entry.label,
 			price = price,
 			forSale = forSale,
-			owned = Roles.owns(player, entry.assetId),
+			owned = ownsCached(player, entry.assetId),
 		})
 	end
 	return items

@@ -86,12 +86,15 @@ local strings: { [string]: { id: string, en: string } } = {
 	favoriteFailed = { id = "Gagal menyimpan favorit", en = "Couldn't save favorite" },
 	favoriteDeniedShort = { id = "Favorit ditolak", en = "Favorite denied" },
 
+	-- Tombol sembunyikan/tampilkan seluruh UI (buat foto)
+	hideGui = { id = "Sembunyi", en = "Hide GUI" },
+	showGui = { id = "Tampilkan", en = "Show GUI" },
+
 	-- Suka per MANNEQUIN (milik showroom ini), beda dari tombol hati per item
 	-- yang itu Favorite katalog Roblox milik akun pemain
 	likeMannequin = { id = "Suka", en = "Like" },
 	likeCount = { id = "%d suka", en = "%d likes" },
 	likeReset = { id = "Reset suka podium ini", en = "Reset this podium's likes" },
-	likeResetAll = { id = "Reset SEMUA suka", en = "Reset ALL likes" },
 	likeResetConfirm = { id = "Klik sekali lagi untuk konfirmasi", en = "Click again to confirm" },
 
 	-- Panel statistik server (tabel kanan-atas)

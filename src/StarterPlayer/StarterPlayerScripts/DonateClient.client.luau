@@ -62,11 +62,11 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- Tombol pembuka -- bersebelahan dengan ikon keranjang di kiri-bawah, bentuk
+-- Tombol pembuka -- tepat di bawah ikon keranjang di kolom kanan, bentuk
 -- sama supaya terbaca sebagai sepasang aksi utama, bukan tombol admin.
 local donateCorner = Instance.new("Frame")
-donateCorner.AnchorPoint = Vector2.new(0, 1)
-donateCorner.Position = UDim2.new(0, 88, 1, -16)
+donateCorner.AnchorPoint = Vector2.new(1, 0.5)
+donateCorner.Position = UDim2.new(1, -16, 0.5, 0)
 donateCorner.Size = UDim2.new(0, 64, 0, 82)
 donateCorner.BackgroundTransparency = 1
 donateCorner.Parent = gui
